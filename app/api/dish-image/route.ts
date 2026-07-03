@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCachedImageUrl, saveImage } from "@/lib/cache";
 import type { Dish } from "@/lib/menu";
+import { imageCost } from "@/lib/pricing";
+import { logUsage } from "@/lib/usage";
 
 export const maxDuration = 300;
 
@@ -46,7 +48,14 @@ export async function POST(request: Request) {
     );
   }
 
-  const data = (await res.json()) as { data?: { b64_json?: string }[] };
+  const data = (await res.json()) as {
+    data?: { b64_json?: string }[];
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      input_tokens_details?: { text_tokens?: number; image_tokens?: number };
+    };
+  };
   const image = data.data?.[0]?.b64_json;
   if (!image) {
     return NextResponse.json(
@@ -54,6 +63,13 @@ export async function POST(request: Request) {
       { status: 502 },
     );
   }
+
+  void logUsage({
+    ts: Date.now(),
+    route: "dish-image",
+    model: "gpt-image-1",
+    costUsd: imageCost(data.usage),
+  });
 
   const savedUrl = await saveImage(dish.name, Buffer.from(image, "base64"));
   if (savedUrl) {

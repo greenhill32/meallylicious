@@ -16,6 +16,21 @@ type ImageEntry = {
   dataUrl: string;
 };
 
+type UsageBucket = { costUsd: number; calls: number };
+type UsageSummary = {
+  today: UsageBucket;
+  week: UsageBucket;
+  month: UsageBucket;
+  allTime: UsageBucket;
+  byRoute: Record<string, UsageBucket>;
+};
+
+const ROUTE_LABEL: Record<string, string> = {
+  "analyze-menu": "menu scans",
+  recipe: "recipes",
+  "dish-image": "dish photos",
+};
+
 const DIFFICULTY_LABEL: Record<Dish["homeCookDifficulty"], string> = {
   easy: "easy at home",
   medium: "weekend project",
@@ -212,6 +227,9 @@ export default function Home() {
   const [images, setImages] = useState<Record<string, ImageEntry>>({});
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
   const [expandedDishes, setExpandedDishes] = useState<Set<string>>(new Set());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -399,6 +417,16 @@ export default function Home() {
     });
   }, []);
 
+  const openSettings = useCallback(() => {
+    setSettingsOpen(true);
+    setUsageLoading(true);
+    fetch("/api/usage-summary")
+      .then((res) => res.json())
+      .then((data: UsageSummary) => setUsage(data))
+      .catch(() => setUsage(null))
+      .finally(() => setUsageLoading(false));
+  }, []);
+
   const categories = analysis
     ? [...new Set(analysis.dishes.map((d) => d.category))]
     : [];
@@ -409,21 +437,43 @@ export default function Home() {
   return (
     <main className="mx-auto w-full max-w-xl px-5 pb-16 pt-6 flex-1">
       {/* Wordmark header */}
-      <header className="flex items-baseline justify-between">
+      <header className="flex items-baseline justify-between gap-3">
         <button
           onClick={startOver}
           className="font-display text-xl font-extrabold tracking-tight"
         >
           Meally<span className="text-chili">*</span>Delicious
         </button>
-        {phase !== "upload" && (
+        <div className="flex items-baseline gap-3">
+          {phase !== "upload" && (
+            <button
+              onClick={startOver}
+              className="font-mono text-xs text-olive underline decoration-dotted underline-offset-4"
+            >
+              new menu
+            </button>
+          )}
           <button
-            onClick={startOver}
-            className="font-mono text-xs text-olive underline decoration-dotted underline-offset-4"
+            onClick={openSettings}
+            aria-label="Usage and cost settings"
+            className="text-olive transition-colors hover:text-basil focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-chili"
           >
-            new menu
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
           </button>
-        )}
+        </div>
       </header>
 
       {error && (
@@ -666,9 +716,93 @@ export default function Home() {
         </div>
       )}
 
+      {/* ————— Settings / usage & cost ————— */}
+      {settingsOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Usage and cost"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-basil/60 p-0 sm:items-center sm:p-5"
+          onClick={() => setSettingsOpen(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setSettingsOpen(false);
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-t-2xl border border-line bg-card p-6 shadow-2xl sm:rounded-2xl"
+          >
+            <div className="flex items-baseline justify-between">
+              <h2 className="font-display text-xl font-bold">Usage &amp; cost</h2>
+              <button
+                autoFocus
+                onClick={() => setSettingsOpen(false)}
+                className="font-mono text-xs text-olive underline decoration-dotted underline-offset-4"
+              >
+                close
+              </button>
+            </div>
+
+            {usageLoading ? (
+              <div className="py-10 text-center">
+                <div className="leader-loading mx-auto w-32" />
+              </div>
+            ) : usage ? (
+              <div className="mt-4">
+                <div className="space-y-2">
+                  <UsageRow label="Today" data={usage.today} />
+                  <UsageRow label="This week" data={usage.week} />
+                  <UsageRow label="This month" data={usage.month} />
+                  <UsageRow label="All time" data={usage.allTime} />
+                </div>
+                {Object.keys(usage.byRoute).length > 0 && (
+                  <div className="mt-5 border-t-2 border-dotted border-line pt-4">
+                    <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-olive">
+                      by feature
+                    </p>
+                    <div className="mt-2 space-y-1.5">
+                      {Object.entries(usage.byRoute).map(([route, d]) => (
+                        <div
+                          key={route}
+                          className="flex items-baseline justify-between text-sm"
+                        >
+                          <span>{ROUTE_LABEL[route] ?? route}</span>
+                          <span className="font-mono text-olive">
+                            ${d.costUsd.toFixed(3)} · {d.calls}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <p className="mt-5 font-mono text-[0.6rem] leading-relaxed text-olive">
+                  real cost from actual token usage on every call · USD · days measured in UTC
+                </p>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-chili">Couldn&apos;t load usage.</p>
+            )}
+          </div>
+        </div>
+      )}
+
       <footer className="mt-16 border-t-[3px] border-dotted border-line pt-4 text-center font-mono text-[0.65rem] text-olive">
         scan → identify → understand → cook
       </footer>
     </main>
+  );
+}
+
+function UsageRow({ label, data }: { label: string; data: UsageBucket }) {
+  return (
+    <div className="flex items-baseline justify-between rounded-lg bg-pistachio px-4 py-3">
+      <span className="font-display text-base font-bold">{label}</span>
+      <span className="font-mono text-sm">
+        ${data.costUsd.toFixed(3)}{" "}
+        <span className="text-olive">
+          · {data.calls} {data.calls === 1 ? "call" : "calls"}
+        </span>
+      </span>
+    </div>
   );
 }

@@ -2,10 +2,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { NextResponse } from "next/server";
 import { MenuAnalysisSchema } from "@/lib/menu";
+import { claudeCost } from "@/lib/pricing";
+import { logUsage } from "@/lib/usage";
 
 export const maxDuration = 300;
 
 const client = new Anthropic();
+const MODEL = "claude-sonnet-5";
 
 const MEDIA_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"] as const;
 type MediaType = (typeof MEDIA_TYPES)[number];
@@ -25,7 +28,7 @@ export async function POST(request: Request) {
 
   try {
     const response = await client.messages.parse({
-      model: "claude-sonnet-5",
+      model: MODEL,
       max_tokens: 16000,
       thinking: { type: "adaptive" },
       system:
@@ -51,6 +54,13 @@ export async function POST(request: Request) {
         },
       ],
       output_config: { format: zodOutputFormat(MenuAnalysisSchema) },
+    });
+
+    void logUsage({
+      ts: Date.now(),
+      route: "analyze-menu",
+      model: MODEL,
+      costUsd: claudeCost(MODEL, response.usage),
     });
 
     if (response.stop_reason === "refusal" || !response.parsed_output) {

@@ -2,10 +2,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import { getCachedRecipe, saveRecipe } from "@/lib/cache";
 import type { Dish } from "@/lib/menu";
+import { claudeCost } from "@/lib/pricing";
+import { logUsage } from "@/lib/usage";
 
 export const maxDuration = 300;
 
 const client = new Anthropic();
+const MODEL = "claude-haiku-4-5";
 
 export async function POST(request: Request) {
   const { dish, restaurantName } = (await request.json()) as {
@@ -29,7 +32,7 @@ export async function POST(request: Request) {
   }
 
   const stream = client.messages.stream({
-    model: "claude-haiku-4-5",
+    model: MODEL,
     max_tokens: 32000,
     system:
       "You write restaurant-copycat recipes for home cooks. Given a dish from a menu, produce " +
@@ -70,6 +73,14 @@ export async function POST(request: Request) {
       stream.on("end", () => {
         controller.close();
         if (fullText.trim()) void saveRecipe(dishName, fullText);
+        void stream.finalMessage().then((msg) =>
+          logUsage({
+            ts: Date.now(),
+            route: "recipe",
+            model: MODEL,
+            costUsd: claudeCost(MODEL, msg.usage),
+          }),
+        );
       });
       stream.on("error", (error) => controller.error(error));
     },
