@@ -1,4 +1,4 @@
-# Meallylicious
+# Meallylicious2
 
 Shazam for restaurant dishes. Snap a photo of a menu, get a plain-English breakdown of every dish (taste, ingredients, allergens, difficulty), then pick one and get a streamed copycat recipe to make it at home.
 
