@@ -399,11 +399,10 @@ export default function Home() {
         void fetchRecipe(selected, analysis?.restaurantName ?? null, controller.signal);
       }
 
-      // Photos are skipped during prefetch on busy menus (see prefetchAll) —
-      // this is where they actually get requested, now that the dish has
-      // been expanded and the recipe genuinely wanted.
+      // The photo normally starts loading when the dish is expanded
+      // (toggleExpanded); this just retries if that attempt errored.
       const imageEntry = images[selected.name];
-      if (!imageEntry || imageEntry.status === "error") {
+      if (imageEntry?.status === "error") {
         void fetchImage(selected, controller.signal);
       }
     },
@@ -428,14 +427,32 @@ export default function Home() {
     setError(null);
   }, []);
 
-  const toggleExpanded = useCallback((name: string) => {
-    setExpandedDishes((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  }, []);
+  const toggleExpanded = useCallback(
+    (target: Dish) => {
+      // State updater must stay pure (React/Strict Mode may invoke it twice) —
+      // decide expand-vs-collapse from the outer closure, fire the fetch
+      // side effect separately, exactly once.
+      const isExpanding = !expandedDishes.has(target.name);
+      setExpandedDishes((prev) => {
+        const next = new Set(prev);
+        if (next.has(target.name)) next.delete(target.name);
+        else next.add(target.name);
+        return next;
+      });
+
+      if (isExpanding) {
+        // Expanding is the signal to fetch the photo on a busy menu, where
+        // it wasn't prefetched — see prefetchAll.
+        const entry = images[target.name];
+        if (!entry || entry.status === "error") {
+          const controller = prefetchAbort.current ?? new AbortController();
+          prefetchAbort.current = controller;
+          void fetchImage(target, controller.signal);
+        }
+      }
+    },
+    [expandedDishes, images, fetchImage],
+  );
 
   const openSettings = useCallback(() => {
     setSettingsOpen(true);
@@ -622,7 +639,7 @@ export default function Home() {
                       dish={d}
                       busy={isBusyMenu}
                       expanded={expandedDishes.has(d.name)}
-                      onToggle={() => toggleExpanded(d.name)}
+                      onToggle={() => toggleExpanded(d)}
                       image={images[d.name]}
                       recipeReady={recipes[d.name]?.status === "done"}
                       onCook={() => cookDish(d)}
