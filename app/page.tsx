@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import Markdown from "react-markdown";
-import { SAMPLE_ANALYSIS, type Dish, type MenuAnalysis } from "@/lib/menu";
+import type { Dish, MenuAnalysis } from "@/lib/menu";
 
 type Phase = "upload" | "analyzing" | "menu" | "recipe";
 
@@ -123,12 +123,6 @@ export default function Home() {
     setError(null);
   }, []);
 
-  const loadSample = useCallback(() => {
-    setError(null);
-    setAnalysis(SAMPLE_ANALYSIS);
-    setPhase("menu");
-  }, []);
-
   const categories = analysis
     ? [...new Set(analysis.dishes.map((d) => d.category))]
     : [];
@@ -234,23 +228,6 @@ export default function Home() {
               ),
             )}
           </ol>
-
-          <button
-            onClick={loadSample}
-            className="mt-8 flex w-full items-center justify-between rounded-xl border border-line bg-card px-5 py-4 text-left transition-colors hover:border-olive focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-chili"
-          >
-            <span>
-              <span className="block font-mono text-[0.65rem] uppercase tracking-[0.2em] text-olive">
-                upload not working?
-              </span>
-              <span className="block font-display text-base font-bold">
-                Preview with a sample menu
-              </span>
-            </span>
-            <span aria-hidden className="font-display text-2xl text-chili">
-              →
-            </span>
-          </button>
         </section>
       )}
 
