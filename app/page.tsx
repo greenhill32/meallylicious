@@ -22,6 +22,130 @@ const DIFFICULTY_LABEL: Record<Dish["homeCookDifficulty"], string> = {
   hard: "chef-level",
 };
 
+/** Menus with more than this many dishes collapse to one-line rows until tapped. */
+const BUSY_MENU_THRESHOLD = 12;
+
+function DishCard({
+  dish,
+  busy,
+  expanded,
+  onToggle,
+  image,
+  recipeReady,
+  onCook,
+  onViewImage,
+}: {
+  dish: Dish;
+  busy: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  image: ImageEntry | undefined;
+  recipeReady: boolean;
+  onCook: () => void;
+  onViewImage: (src: string) => void;
+}) {
+  const showDetails = !busy || expanded;
+  const thumbSize = busy && !expanded ? "h-14 w-14" : "h-20 w-20";
+
+  return (
+    <li className="overflow-hidden rounded-xl border border-line bg-card shadow-[0_2px_0_var(--line)]">
+      <div className="flex items-start gap-4 p-5">
+        <div
+          role={busy ? "button" : undefined}
+          tabIndex={busy ? 0 : undefined}
+          onClick={busy ? onToggle : undefined}
+          onKeyDown={
+            busy
+              ? (e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onToggle();
+                  }
+                }
+              : undefined
+          }
+          aria-expanded={busy ? expanded : undefined}
+          className={`min-w-0 flex-1 ${busy ? "cursor-pointer" : ""}`}
+        >
+          <div className="flex items-baseline">
+            <h3 className="font-display text-xl font-bold leading-tight">{dish.name}</h3>
+            <span className="leader" />
+            <span className="font-mono text-sm text-olive">{dish.price ?? "—"}</span>
+            {busy && (
+              <span
+                aria-hidden
+                className={`ml-2 shrink-0 font-display text-base text-olive transition-transform ${
+                  expanded ? "rotate-180" : ""
+                }`}
+              >
+                ⌄
+              </span>
+            )}
+          </div>
+          <p
+            className={`mt-2 text-[0.95rem] leading-relaxed ${
+              busy && !expanded ? "line-clamp-1 text-olive" : ""
+            }`}
+          >
+            {dish.summary}
+          </p>
+        </div>
+
+        {image?.status === "done" ? (
+          <button
+            onClick={() => onViewImage(image.dataUrl)}
+            aria-label={`View photo of ${dish.name}`}
+            className="mt-1 shrink-0 overflow-hidden rounded-lg border border-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-chili"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={image.dataUrl}
+              alt={dish.name}
+              className={`object-cover transition-transform hover:scale-105 ${thumbSize}`}
+            />
+          </button>
+        ) : image?.status === "loading" ? (
+          <div
+            aria-hidden
+            className={`mt-1 flex shrink-0 items-center justify-center rounded-lg border border-dashed border-line bg-pistachio ${thumbSize}`}
+          >
+            <div className="leader-loading w-10" />
+          </div>
+        ) : null}
+      </div>
+
+      {showDetails && (
+        <div className="px-5 pb-5">
+          <p className="text-sm leading-relaxed text-olive">
+            <span className="font-semibold text-basil">Tastes like:</span> {dish.taste}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-1.5 font-mono text-[0.65rem] uppercase tracking-wide">
+            <span className="rounded-full bg-butter/50 px-2.5 py-1">{dish.cuisine}</span>
+            <span className="rounded-full bg-pistachio px-2.5 py-1">
+              {DIFFICULTY_LABEL[dish.homeCookDifficulty]}
+            </span>
+            {dish.allergens.map((a) => (
+              <span
+                key={a}
+                className="rounded-full border border-chili/40 px-2.5 py-1 text-chili"
+              >
+                {a}
+              </span>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-olive">{dish.keyIngredients.join(" · ")}</p>
+          <button
+            onClick={onCook}
+            className="mt-4 w-full rounded-full bg-basil py-3 font-display text-base font-bold text-card transition-colors hover:bg-chili focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-chili"
+          >
+            {recipeReady ? "Make this at home · recipe ready" : "Make this at home"}
+          </button>
+        </div>
+      )}
+    </li>
+  );
+}
+
 const COOKING_CAPTIONS = [
   "reading the dish",
   "raiding the pantry",
@@ -87,6 +211,7 @@ export default function Home() {
   const [recipes, setRecipes] = useState<Record<string, RecipeEntry>>({});
   const [images, setImages] = useState<Record<string, ImageEntry>>({});
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
+  const [expandedDishes, setExpandedDishes] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -218,6 +343,7 @@ export default function Home() {
         setAnalysis(result);
         setRecipes({});
         setImages({});
+        setExpandedDishes(new Set());
         setPhase("menu");
         prefetchAll(result);
       } catch (e) {
@@ -260,12 +386,23 @@ export default function Home() {
     setRecipes({});
     setImages({});
     setLightbox(null);
+    setExpandedDishes(new Set());
     setError(null);
+  }, []);
+
+  const toggleExpanded = useCallback((name: string) => {
+    setExpandedDishes((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
   }, []);
 
   const categories = analysis
     ? [...new Set(analysis.dishes.map((d) => d.category))]
     : [];
+  const isBusyMenu = (analysis?.dishes.length ?? 0) > BUSY_MENU_THRESHOLD;
 
   const currentRecipe = dish ? recipes[dish.name] : undefined;
 
@@ -394,6 +531,11 @@ export default function Home() {
           <h1 className="mt-1 font-display text-3xl font-extrabold tracking-tight">
             Pick one to try at home
           </h1>
+          {isBusyMenu && (
+            <p className="mt-2 font-mono text-xs text-olive">
+              big menu — tap a dish to see the full breakdown
+            </p>
+          )}
 
           {categories.map((category) => (
             <div key={category} className="mt-8">
@@ -405,84 +547,17 @@ export default function Home() {
                 {analysis.dishes
                   .filter((d) => d.category === category)
                   .map((d) => (
-                    <li
+                    <DishCard
                       key={d.name}
-                      className="rounded-xl border border-line bg-card p-5 shadow-[0_2px_0_var(--line)]"
-                    >
-                      <div className="flex items-start gap-4">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-baseline">
-                            <h3 className="font-display text-xl font-bold leading-tight">
-                              {d.name}
-                            </h3>
-                            <span className="leader" />
-                            <span className="font-mono text-sm text-olive">
-                              {d.price ?? "—"}
-                            </span>
-                          </div>
-                          <p className="mt-2 text-[0.95rem] leading-relaxed">
-                            {d.summary}
-                          </p>
-                        </div>
-                        {images[d.name]?.status === "done" ? (
-                          <button
-                            onClick={() =>
-                              setLightbox({
-                                src: images[d.name].dataUrl,
-                                alt: d.name,
-                              })
-                            }
-                            aria-label={`View photo of ${d.name}`}
-                            className="mt-1 shrink-0 overflow-hidden rounded-lg border border-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-chili"
-                          >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={images[d.name].dataUrl}
-                              alt={d.name}
-                              className="h-20 w-20 object-cover transition-transform hover:scale-105"
-                            />
-                          </button>
-                        ) : images[d.name]?.status === "loading" ? (
-                          <div
-                            aria-hidden
-                            className="mt-1 flex h-20 w-20 shrink-0 items-center justify-center rounded-lg border border-dashed border-line bg-pistachio"
-                          >
-                            <div className="leader-loading w-10" />
-                          </div>
-                        ) : null}
-                      </div>
-                      <p className="mt-2 text-sm leading-relaxed text-olive">
-                        <span className="font-semibold text-basil">Tastes like:</span>{" "}
-                        {d.taste}
-                      </p>
-                      <div className="mt-3 flex flex-wrap gap-1.5 font-mono text-[0.65rem] uppercase tracking-wide">
-                        <span className="rounded-full bg-butter/50 px-2.5 py-1">
-                          {d.cuisine}
-                        </span>
-                        <span className="rounded-full bg-pistachio px-2.5 py-1">
-                          {DIFFICULTY_LABEL[d.homeCookDifficulty]}
-                        </span>
-                        {d.allergens.map((a) => (
-                          <span
-                            key={a}
-                            className="rounded-full border border-chili/40 px-2.5 py-1 text-chili"
-                          >
-                            {a}
-                          </span>
-                        ))}
-                      </div>
-                      <p className="mt-3 text-xs text-olive">
-                        {d.keyIngredients.join(" · ")}
-                      </p>
-                      <button
-                        onClick={() => cookDish(d)}
-                        className="mt-4 w-full rounded-full bg-basil py-3 font-display text-base font-bold text-card transition-colors hover:bg-chili focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-chili"
-                      >
-                        {recipes[d.name]?.status === "done"
-                          ? "Make this at home · recipe ready"
-                          : "Make this at home"}
-                      </button>
-                    </li>
+                      dish={d}
+                      busy={isBusyMenu}
+                      expanded={expandedDishes.has(d.name)}
+                      onToggle={() => toggleExpanded(d.name)}
+                      image={images[d.name]}
+                      recipeReady={recipes[d.name]?.status === "done"}
+                      onCook={() => cookDish(d)}
+                      onViewImage={(src) => setLightbox({ src, alt: d.name })}
+                    />
                   ))}
               </ul>
             </div>
