@@ -303,12 +303,19 @@ export default function Home() {
     }
   }, []);
 
-  /** Kick off recipe + photo generation for every dish, a few at a time. */
+  /**
+   * Kick off recipe generation for every dish, a few at a time. Dish photos
+   * (slower, costlier — OpenAI) are also prefetched for normal menus, but on
+   * a busy menu (> BUSY_MENU_THRESHOLD dishes) they're skipped here and only
+   * fetched on demand once a dish is expanded and "Make this at home" is
+   * actually tapped — see cookDish.
+   */
   const prefetchAll = useCallback(
     (result: MenuAnalysis) => {
       prefetchAbort.current?.abort();
       const controller = new AbortController();
       prefetchAbort.current = controller;
+      const busy = result.dishes.length > BUSY_MENU_THRESHOLD;
 
       const recipeQueue = [...result.dishes];
       const recipeWorkers = Array.from({ length: 3 }, async () => {
@@ -318,15 +325,19 @@ export default function Home() {
         }
       });
 
-      const imageQueue = [...result.dishes];
-      const imageWorkers = Array.from({ length: 2 }, async () => {
-        while (imageQueue.length > 0 && !controller.signal.aborted) {
-          const next = imageQueue.shift()!;
-          await fetchImage(next, controller.signal);
-        }
-      });
+      const workers: Promise<void>[] = [...recipeWorkers];
+      if (!busy) {
+        const imageQueue = [...result.dishes];
+        const imageWorkers = Array.from({ length: 2 }, async () => {
+          while (imageQueue.length > 0 && !controller.signal.aborted) {
+            const next = imageQueue.shift()!;
+            await fetchImage(next, controller.signal);
+          }
+        });
+        workers.push(...imageWorkers);
+      }
 
-      void Promise.all([...recipeWorkers, ...imageWorkers]);
+      void Promise.all(workers);
     },
     [fetchRecipe, fetchImage],
   );
@@ -379,15 +390,24 @@ export default function Home() {
       setPhase("recipe");
       window.scrollTo({ top: 0 });
 
+      const controller = prefetchAbort.current ?? new AbortController();
+      prefetchAbort.current = controller;
+
       // Retry on demand if the background fetch for this dish failed or never ran.
-      const entry = recipes[selected.name];
-      if (!entry || entry.status === "error") {
-        const controller = prefetchAbort.current ?? new AbortController();
-        prefetchAbort.current = controller;
+      const recipeEntry = recipes[selected.name];
+      if (!recipeEntry || recipeEntry.status === "error") {
         void fetchRecipe(selected, analysis?.restaurantName ?? null, controller.signal);
       }
+
+      // Photos are skipped during prefetch on busy menus (see prefetchAll) —
+      // this is where they actually get requested, now that the dish has
+      // been expanded and the recipe genuinely wanted.
+      const imageEntry = images[selected.name];
+      if (!imageEntry || imageEntry.status === "error") {
+        void fetchImage(selected, controller.signal);
+      }
     },
-    [recipes, analysis, fetchRecipe],
+    [recipes, images, analysis, fetchRecipe, fetchImage],
   );
 
   const backToMenu = useCallback(() => {
