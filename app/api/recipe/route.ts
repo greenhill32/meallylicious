@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
+import { getCachedRecipe, saveRecipe } from "@/lib/cache";
 import type { Dish } from "@/lib/menu";
 
 export const maxDuration = 300;
@@ -14,6 +15,17 @@ export async function POST(request: Request) {
 
   if (!dish?.name) {
     return NextResponse.json({ error: "Send { dish } from a menu analysis" }, { status: 400 });
+  }
+
+  const cached = await getCachedRecipe(dish.name);
+  if (cached) {
+    return new Response(cached, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store",
+        "X-Meally-Cache": "hit",
+      },
+    });
   }
 
   const stream = client.messages.stream({
@@ -48,10 +60,18 @@ export async function POST(request: Request) {
   });
 
   const encoder = new TextEncoder();
+  const dishName = dish.name;
+  let fullText = "";
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
-      stream.on("text", (delta) => controller.enqueue(encoder.encode(delta)));
-      stream.on("end", () => controller.close());
+      stream.on("text", (delta) => {
+        fullText += delta;
+        controller.enqueue(encoder.encode(delta));
+      });
+      stream.on("end", () => {
+        controller.close();
+        if (fullText.trim()) void saveRecipe(dishName, fullText);
+      });
       stream.on("error", (error) => controller.error(error));
     },
     cancel() {
