@@ -25,9 +25,8 @@ export async function POST(request: Request) {
 
   try {
     const response = await client.messages.parse({
-      model: "claude-opus-4-8",
+      model: "claude-haiku-4-5",
       max_tokens: 16000,
-      thinking: { type: "adaptive" },
       system:
         "You are a food expert who reads restaurant menus. Extract every dish you can read " +
         "from the menu photo and explain each one for a curious diner who wants to understand " +

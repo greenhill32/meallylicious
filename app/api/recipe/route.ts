@@ -29,9 +29,8 @@ export async function POST(request: Request) {
   }
 
   const stream = client.messages.stream({
-    model: "claude-opus-4-8",
-    max_tokens: 64000,
-    thinking: { type: "adaptive" },
+    model: "claude-haiku-4-5",
+    max_tokens: 32000,
     system:
       "You write restaurant-copycat recipes for home cooks. Given a dish from a menu, produce " +
       "one complete recipe that recreates it faithfully in a home kitchen with supermarket " +
